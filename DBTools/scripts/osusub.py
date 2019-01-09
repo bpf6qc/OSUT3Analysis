@@ -723,6 +723,39 @@ def AcquireAwesomeAAA(Dataset, datasetInfoName, AAAFileList, datasetRead, crossS
 
     shutil.rmtree (tmpDir)
 
+# Creates a dict in datasetInfo_(Label)_cfg.py where keys are the output files of this job, and values are the inputs to this job
+# e.g. {'dir/emptySkim_0.root' : ['dir2/skim_0.root', 'dir2/skim_1.root'], ...}
+def MakeOutputFileMap(DatasetRead, NumberOfJobs, WorkDir, datasetInfoName):
+    listOfFiles = DatasetRead['listOfFiles']
+    
+    expectedOutputMap = {}
+    filesPerJob = int (math.floor (len (listOfFiles) / NumberOfJobs))
+    residualLength = int(len(listOfFiles) % NumberOfJobs)
+
+    outputNamePrefix = WorkDir + '/' + Label + '/' + ChannelName
+    if listOfFiles[0].split('/')[-1].startswith('skim_') or listOfFiles[0].split('/')[-1].startswith('emptySkim_'):
+        outputNamePrefix += 'emptySkim_'
+    else:
+        outputNamePrefix += 'skim_'
+
+    for iJob in range(0, NumberOfJobs):
+        if iJob < residualLength:
+            expectedOutputMap[outputNamePrefix + str(iJob) + '.root'] = listOfFiles[(iJob * filesPerJob + iJob):(iJob * filesPerJob + filesPerJob + iJob + 1)]
+        else:
+            expectedOutputMap[outputName] = listOfFiles[(iJob * filesPerJob + residualLength):(iJob * filesPerJob + residualLength + filesPerJob)]
+
+    text = 'expectedOutputMap = {\n'
+    for x in expectedOutputMap:
+        text += '\t\'' + x + '\' : [\n'
+        for y in expectedOutputMap[x]:
+            text += '\t\t\'' + y + '\',\n'
+        text += '\t]\n,'
+    text += '}\n'
+
+    datasetInfoFile = open(datasetInfoName, "a")
+    datasetInfoFile.write(text)
+    datasetInfoFile.close()
+
 #It is the function which generates the list of input files for a given dataset type.
 def MakeFileList(Dataset, FileType, Directory, Label, UseAAA, crossSection):
     datasetRead = {}
@@ -763,6 +796,7 @@ def MakeFileList(Dataset, FileType, Directory, Label, UseAAA, crossSection):
         else:
             inputFiles = GetListOfRootFiles(arguments.inputDirectory)
         datasetRead['numberOfFiles'] = len(inputFiles)
+        datasetRead['listofFiles'] = inputFiles
         datasetRead['realDatasetName'] = 'FilesInDirectory:' + Dataset
         text = 'listOfFiles = [\n'
         if not UseAAA:
@@ -806,6 +840,7 @@ def MakeFileList(Dataset, FileType, Directory, Label, UseAAA, crossSection):
             if not ".root" in inputFiles[f]:
                 del inputFiles[f]
         datasetRead['numberOfFiles'] = len(inputFiles)
+        datasetRead['listofFiles'] = inputFiles
         datasetRead['realDatasetName'] = 'FilesInList:' + Dataset
         text = 'listOfFiles = [\n'
         #Please give the absolute paths of the files like /data/user/***/condor/dir or /store/....
@@ -929,6 +964,7 @@ def MakeFileList(Dataset, FileType, Directory, Label, UseAAA, crossSection):
                 return
         datasetRead['realDatasetName'] = datasetInfo.datasetName if hasattr (datasetInfo, "datasetName") else DatasetName
         datasetRead['numberOfFiles'] = len(datasetInfo.listOfFiles)
+        datasetRead['listofFiles'] = inputFiles
         if RunOverSkim:
             datasetRead['numberOfEvents'] = datasetInfo.skimNumberOfEvents
         datasetRead['secondaryCollections'] = secondaryCollectionModifications
@@ -969,7 +1005,7 @@ def SkimChannelFinder(userConfig, Directory, temPset):
 ################################################################################
 #            Function to modify the dataset_*_Info_cfy file for skim.          #
 ################################################################################
-def SkimModifier(Label, Directory, crossSection, isRemote = False):
+def SkimModifier(Label, Directory, crossSection, isRemote = False): # durp
     if isRemote:
         SkimDirectory = str(arguments.SkimDirectory) + '/' + str(Label) + '/' + str(arguments.SkimChannel)
         OriginalNumberOfEvents = os.popen('cat ' + Directory + '/OriginalNumberOfEvents.txt').read().split()[0] if os.path.isfile (Directory + '/OriginalNumberOfEvents.txt') else 0.0
@@ -1240,7 +1276,7 @@ if not arguments.Resubmit:
             MaxEvents = arguments.MaxEvents
             if arguments.localConfig:
                 if NumberOfJobs < 0:
-                    NumberOfJobs = nJobs[dataset]  # If user has specified NumberOfJobs, use that value.
+                    NumberOfJobs = nJobs[dataset]  # If user has specified NumberOfJobs, use that value. # durp
                 if (not arguments.Generic) or (arguments.Generic and arguments.localConfig):
                      DatasetName = dataset_names[dataset]
                 else:
@@ -1309,7 +1345,9 @@ if not arguments.Resubmit:
                 if arguments.NumberOfEventsPerJob > 0:
                     NumberOfJobs = max(1,int(math.ceil(NumberOfEvents/int(arguments.NumberOfEventsPerJob))))
             if NumberOfJobs > NumberOfFiles:
-                NumberOfJobs = NumberOfFiles
+                NumberOfJobs = NumberOfFiles # durp
+
+            MakeOutputFileMap(DatasetRead, NumberOfJobs, WorkDir, datasetInfoName) # durp
 
             RealMaxEvents = EventsPerJob*NumberOfJobs
             userConfig = 'userConfig_' + dataset + '_cfg.py'

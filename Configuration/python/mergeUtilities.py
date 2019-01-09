@@ -17,7 +17,8 @@ from OSUT3Analysis.Configuration.processingUtilities import *
 from OSUT3Analysis.Configuration.formattingUtilities import *
 from OSUT3Analysis.DBTools.condorSubArgumentsSet import *
 import FWCore.ParameterSet.Config as cms
-from ROOT import TFile
+from ROOT import TFile, TNetXNGFile
+import time
 
 NTHREADS_FOR_BATCH_MERGING = 1
 
@@ -250,12 +251,17 @@ def MakeResubmissionScript(badIndices, originalSubmissionScript):
 ###############################################################################
 #                       Determine whether a skim file is valid.               #
 ###############################################################################
-def SkimFileValidator(File):
+def SkimFileValidator(File, useLPCEOS = False):
     print "testing ", File
-    FileToTest = TFile(File)
+    if useLPCEOS:
+        FileToTest = TNetXNGFile(re.sub (r"/eos/uscms/store/", r"root://cmseos.fnal.gov//store/", os.path.realpath (File)))
+    else:
+        FileToTest = TFile(File)
     Valid = True
     for TreeToTest in ['MetaData', 'ParameterSets', 'Parentage', 'Events', 'LuminosityBlocks', 'Runs']:
         Valid = Valid and (FileToTest.Get(TreeToTest) != None)
+        if not Valid:
+            break
     InvalidOrEmpty = not Valid or not FileToTest.Get ("Events").GetEntries ()
     return Valid, InvalidOrEmpty
 
@@ -348,24 +354,27 @@ def mergeOneDataset(dataSet, IntLumi, CondorDir, OutputDir="", nThreadsActive = 
             if verbose:
                 print "  job" + ' ' * (4-len(str(index))) + index + " had bad/skipped input file"
 
-
     # check for any corrupted skim output files
     skimDirs = [member for member in  os.listdir(os.getcwd()) if os.path.isdir(member)]
     FilesToRemove = []
+    useLPCEOS = False
+    time_start = time.time()
     for channel in skimDirs:
+        if lpcCAF and os.path.realpath(channel).startswith('/eos/uscms/store/'):
+            useLPCEOS = True
         for skimFile in glob.glob(channel+'/*.root'):
             # don't check for good skims of jobs we already know are bad
             index = skimFile.split('.')[0].split('_')[1]
             if index in BadIndices:
                 continue
-            Valid, InvalidOrEmpty = SkimFileValidator(skimFile.rstrip('\n'))
+            Valid, InvalidOrEmpty = SkimFileValidator(skimFile.rstrip('\n'), useLPCEOS)
             if not Valid:
                 BadIndices.append(index)
                 if verbose:
                     print "  job" + ' ' * (4-len(str(index))) + index + " had bad skim output file"
             if InvalidOrEmpty:
                 FilesToRemove.append (skimFile)
-
+    print '--- %s seconds ---' % (time.time() - time_start)
 
     # check for abnormal condor return values
     sys.path.append(directory)
